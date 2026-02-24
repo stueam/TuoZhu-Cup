@@ -1,0 +1,271 @@
+.ac-game-menu {
+    width: 100%;
+    height: 100%;
+    background-image: url("/static/image/menu/background.jpg");
+    background-size: 100% 100%;
+    user-select: none;
+}
+.ac-game-menu-field {
+    width: 20vw;
+    position: relative;
+    top: 40vh;
+    left: 15vh;
+}
+.ac-game-menu-field-item {
+    color: white;
+    height: 7vh;
+    width: 18vw;
+    font-size: 5vh;
+    font-style: italic;
+    text-align: center;
+    background-color: rgba(39,21,28,0.6);
+    border-radius: 10px;
+    cursor: pointer;
+}
+.ac-game-menu-field-item:hover {
+    transform: scale(1.1);
+    transition: 300ms;
+}
+.ac-game-playground {
+    width: 100%;
+    height: 100%;
+    user-select: none;
+}
+/* 玩法介绍界面样式 */
+.ac-game-intro {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    z-index: 1500;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+}
+
+.intro-content {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 40px;
+    max-width: 600px;
+    width: 90%;
+    margin: 40px auto;
+    color: white;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.intro-title {
+    text-align: center;
+    font-size: 48px;
+    margin-bottom: 30px;
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
+.intro-text {
+    font-size: 18px;
+    line-height: 1.8;
+    margin-bottom: 30px;
+}
+
+.intro-text h2 {
+    color: #4ecdc4;
+    margin: 25px 0 15px 0;
+    font-size: 28px;
+    border-bottom: 2px solid rgba(78, 205, 196, 0.3);
+    padding-bottom: 5px;
+}
+
+.intro-text h2:first-child {
+    margin-top: 0;
+}
+
+.intro-text p {
+    margin: 10px 0;
+    padding-left: 20px;
+    position: relative;
+}
+
+.intro-text p:before {
+    content: "•";
+    color: #ff6b6b;
+    font-size: 20px;
+    position: absolute;
+    left: 0;
+    top: -2px;
+}
+
+.intro-back-btn {
+    display: block;
+    width: 200px;
+    margin: 0 auto;
+    padding: 15px 0;
+    font-size: 24px;
+    font-weight: bold;
+    color: white;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.intro-back-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .intro-content {
+        padding: 30px;
+    }
+    
+    .intro-title {
+        font-size: 36px;
+    }
+    
+    .intro-text {
+        font-size: 16px;
+    }
+    
+    .intro-text h2 {
+        font-size: 24px;
+    }
+    
+    .intro-back-btn {
+        width: 160px;
+        font-size: 20px;
+        padding: 12px 0;
+    }
+}
+/* 设置界面样式 */
+.ac-game-settings {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    z-index: 1500;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+}
+
+.settings-content {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 40px;
+    max-width: 600px;
+    width: 90%;
+    margin: 40px auto;
+    color: white;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-title {
+    text-align: center;
+    font-size: 48px;
+    margin-bottom: 30px;
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
+.settings-section {
+    margin-bottom: 30px;
+}
+
+.settings-section h2 {
+    color: #4ecdc4;
+    font-size: 28px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid rgba(78, 205, 196, 0.3);
+    padding-bottom: 5px;
+}
+
+.difficulty-options {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.difficulty-option {
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid transparent;
+    border-radius: 10px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.difficulty-option:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: scale(1.02);
+}
+
+.difficulty-option.selected {
+    border-color: #ffd700;
+    background: rgba(255, 215, 0, 0.1);
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
+}
+
+.difficulty-name {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #fff;
+}
+
+.difficulty-desc {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.settings-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 40px;
+}
+
+.settings-save-btn, .settings-back-btn {
+    padding: 12px 40px;
+    font-size: 20px;
+    font-weight: bold;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.settings-save-btn {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+}
+
+.settings-save-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+}
+
+.settings-back-btn {
+    background: linear-gradient(135deg, #f44336, #da190b);
+    color: white;
+}
+
+.settings-back-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4);
+}
