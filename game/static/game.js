@@ -34,6 +34,7 @@ class AcGameMenu {
         let outer = this;
         this.$single.click(function() { 
             outer.hide();
+            outer.root.state = "playing"; // 更新状态
             outer.root.playground.show();
         });
 
@@ -46,7 +47,7 @@ class AcGameMenu {
         this.$settings.click(function() {
             console.log("设置");
             outer.hide();
-            outer.root.settings.show();  // 显示设置界面
+            outer.root.settings_panel.show();  // 显示设置界面
         });
     }
 
@@ -79,6 +80,48 @@ class AcGamePlayground {
         this.zone_shrink_delay = 10000;      // 开始缩圈前的等待时间（毫秒）
         this.zone_damage = 1.3;               // 毒圈每秒伤害
         this.game_start_time = null;
+        
+        this.start();
+    }
+    
+    start() {
+        this.load_logos();
+    }
+    
+    load_logos() {
+        this.logo_images = {};
+        this.logo_keys = []; // 以方便随机抽取
+        
+        const logos = [
+            "bupt.png",
+            "fudan.png",
+            "mit.webp",
+            "pku.png",
+            "sjtu.png",
+            "tsinghua.png",
+            "ucas.png"
+        ];
+        
+        for (let i = 0; i < logos.length; i++) {
+            let filename = logos[i];
+            let name = filename.split('.')[0];
+            let img = new Image();
+            img.src = '/static/image/logos/' + filename;
+            this.logo_images[name] = img;
+            this.logo_keys.push(name);
+        }
+    }
+    
+    get_random_logo() {
+        if (!this.logo_keys || this.logo_keys.length === 0) return null;
+        
+        // 过滤掉清华
+        const enemy_logos = this.logo_keys.filter(key => key !== 'tsinghua');
+        if (enemy_logos.length === 0) return null;
+        
+        // 随机抽取一个
+        const random_index = Math.floor(Math.random() * enemy_logos.length);
+        return enemy_logos[random_index];
     }
     
     init_game() {
@@ -105,7 +148,8 @@ class AcGamePlayground {
                 this.height * 0.05,
                 "white",
                 this.height * 0.2,
-                true
+                true,
+                "tsinghua"
             );
             this.players.push(player);
             
@@ -116,6 +160,7 @@ class AcGamePlayground {
                 let random_x = Math.random() * this.width;
                 let random_y = Math.random() * this.height;
                 let random_color = `rgb(${Math.random()*256},${Math.random()*256},${Math.random()*256})`;
+                let random_logo = this.get_random_logo();
                 
                 this.players.push(new Player(
                     this,
@@ -124,7 +169,8 @@ class AcGamePlayground {
                     this.height * 0.05,
                     random_color,
                     this.height * 0.2,
-                    false
+                    false,
+                    random_logo
                 ));
             }
             
@@ -359,7 +405,7 @@ class AcGameSettings {
         }
         
         // 保存设置到 root 对象，供游戏使用
-        this.root.settings = {
+        this.root.game_settings = {
             difficulty: this.current_difficulty,
             shoot_cooldown_range: shoot_cooldown_range
         };
@@ -415,7 +461,74 @@ class AcGameObject {
 }
 
 let last_timestamp = 0;
+let CURRENT_MAIN_PLAYER = null;
+
+let floatingTexts = [];
+
+class FloatingText {
+    constructor(x, y, value) {
+        this.x = x;
+        this.y = y;
+        this.value = value;
+
+        this.opacity = 1.0;
+        this.speedY = -50;        // upward movement (pixels per second)
+        this.lifetime = 1.0;      // seconds
+        this.elapsed = 0;
+    }
+
+    update(dt) {
+        this.elapsed += dt;
+
+        // Move upward
+        this.y += this.speedY * dt;
+
+        // Fade out
+        this.opacity = 1 - (this.elapsed / this.lifetime);
+
+        if (this.opacity < 0) this.opacity = 0;
+    }
+
+    render(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.opacity;
+        ctx.fillStyle = "gold";
+        ctx.font = "bold 28px Arial"; // 稍微加粗加强视觉效果
+        ctx.textAlign = "center";
+        
+        // 增加黑色描边防止看不清
+        ctx.strokeStyle = "rgba(0,0,0," + this.opacity + ")";
+        ctx.lineWidth = 3;
+        ctx.strokeText("+" + this.value, this.x, this.y);
+        
+        ctx.fillText("+" + this.value, this.x, this.y);
+        ctx.restore();
+    }
+
+    isExpired() {
+        return this.elapsed >= this.lifetime;
+    }
+}
+
 let AC_GAME_ANIMATION = function(timestamp) {
+    // 渲染分层排序，确保 z_index 小的物体先绘制（在底层）
+    AC_GAME_OBJECT.sort((a, b) => {
+        let z_a = a.z_index !== undefined ? a.z_index : 10;
+        let z_b = b.z_index !== undefined ? b.z_index : 10;
+        return z_a - z_b;
+    });
+
+    // 查找并保存主玩家的最新状态
+    for (let i = 0; i < AC_GAME_OBJECT.length; i++) {
+        let obj = AC_GAME_OBJECT[i];
+        if (obj.is_main_player) {
+            CURRENT_MAIN_PLAYER = obj;
+            break;
+        }
+    }
+
+    let freeze_game = CURRENT_MAIN_PLAYER && CURRENT_MAIN_PLAYER.is_dead;
+
     for(let i = 0; i < AC_GAME_OBJECT.length; i++) {
         let obj = AC_GAME_OBJECT[i];
         if(!obj.has_called_start) {
@@ -423,17 +536,80 @@ let AC_GAME_ANIMATION = function(timestamp) {
             obj.has_called_start = true;
         } else {
             obj.timedelta = timestamp - last_timestamp;
-            obj.update();
+            if (!freeze_game) {
+                obj.update();
+            }
         }
     }
+    
+    // 全局UI与终局结束画面渲染层
+    if (CURRENT_MAIN_PLAYER && CURRENT_MAIN_PLAYER.playground && CURRENT_MAIN_PLAYER.playground.game_map) {
+        let ctx = CURRENT_MAIN_PLAYER.playground.game_map.ctx;
+        let canvas = ctx.canvas;
+        
+        // --- 浮动跳字系统 - 渲染与状态更新逻辑 ---
+        if (!freeze_game) {
+            let dt = timestamp - last_timestamp;
+            // 如果最后一帧时间戳为0 (刚开始)，dt修正为16ms防飞天
+            if (!last_timestamp) dt = 16;
+            
+            for (let i = 0; i < floatingTexts.length; i++) {
+                floatingTexts[i].update(dt);
+            }
+            // 自动移除（过滤）消失的文本
+            floatingTexts = floatingTexts.filter(ft => !ft.isExpired());
+        }
+        
+        // 渲染浮动分数文本（要求渲染层级位于所有Player和Particle之后）
+        for (let i = 0; i < floatingTexts.length; i++) {
+            floatingTexts[i].render(ctx);
+        }
+        // ------------------------------------
+
+        if (!CURRENT_MAIN_PLAYER.is_dead) {
+            // 正常游玩时绘制实时分数
+            ctx.save();
+            ctx.fillStyle = "gold";
+            ctx.font = "24px Arial";
+            ctx.textAlign = "left";
+            ctx.fillText("Score: " + CURRENT_MAIN_PLAYER.score, 20, 40);
+            ctx.restore();
+        } else {
+            // 死亡时绘制死亡全屏特效 (通过冻结更新画面并绘制遮罩完成)
+            if (!CURRENT_MAIN_PLAYER.has_drawn_game_over) {
+                ctx.save();
+                // 绘制半透明黑色遮罩
+                ctx.fillStyle = "rgba(0,0,0,0.75)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // 绘制最终成绩
+                ctx.fillStyle = "gold";
+                ctx.font = "48px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("FINAL SCORE", canvas.width / 2, canvas.height / 2 - 50);
+                ctx.fillText(CURRENT_MAIN_PLAYER.score, canvas.width / 2, canvas.height / 2 + 20);
+                ctx.restore();
+                
+                CURRENT_MAIN_PLAYER.has_drawn_game_over = true;
+            }
+        }
+    }
+
     last_timestamp = timestamp;
     requestAnimationFrame(AC_GAME_ANIMATION);
 }
 requestAnimationFrame(AC_GAME_ANIMATION);
 
+function destroy_all_ac_game_objects() {
+    for (let i = AC_GAME_OBJECT.length - 1; i >= 0; i--) {
+        AC_GAME_OBJECT[i].destroy();
+    }
+}
+
 class SafeZone extends AcGameObject {
     constructor(playground) {
         super();
+        this.z_index = 1; // 仅次于地图
         this.playground = playground;
         
         // 安全检查
@@ -522,6 +698,7 @@ class SafeZone extends AcGameObject {
 class GameMap extends AcGameObject {
     constructor(playground) {
         super();
+        this.z_index = 0; // 最底层
         this.playground = playground;
         this.$canvas = $(`<canvas></canvas>`);
         this.ctx = this.$canvas[0].getContext('2d');
@@ -557,9 +734,6 @@ class GameMap extends AcGameObject {
         // 原有的拖尾效果
         this.ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
         this.ctx.fillRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
-        
-        
-        this.ctx.restore();
         
         // 毒圈信息显示
         this.draw_zone_info();
@@ -599,8 +773,24 @@ class GameMap extends AcGameObject {
         ctx.restore();
     }
 }
+
+function getKillScore(victim_logo_key) {
+    switch (victim_logo_key) {
+        case "pku":
+            return 25;
+        case "bupt":
+        case "fudan":
+        case "sjtu":
+        case "ucas":
+        case "mit":
+            return 50;
+        default:
+            return 0;
+    }
+}
+
 class Player extends AcGameObject {
-    constructor(playground, x, y, radius, color, speed, is_me) {
+    constructor(playground, x, y, radius, color, speed, is_me, logo_key=null, logo_img=null) {
         super();
         this.playground = playground;
         this.x = x;
@@ -611,17 +801,21 @@ class Player extends AcGameObject {
         this.is_me = is_me;
         this.eps = 1;
         
+        // 生命值相关属性
+        this.max_health = 100;
+        this.health = 100;
+        
         // 运动相关属性
         this.vx = 0;
         this.vy = 0;
         this.move_length = 0;
         
         // 技能相关
-        this.our_skill = null;
+        this.our_skill = "commonattack";
         
         // 敌人射击相关
-        this.shoot_cooldown = 360;           // 射击冷却时间
-        this.shoot_cooldown_max = 360;       // 最大冷却时间（帧数），约1秒（60fps）
+        this.shoot_cooldown = this.random_enemy_shoot_cooldown();
+        this.shoot_cooldown_max = this.get_enemy_shoot_cooldown_range().max;
         
         // 击退相关属性
         this.damagex = 0;
@@ -629,6 +823,34 @@ class Player extends AcGameObject {
         this.damagespeed = 0;
         this.friction = 0.8;
         this.is_knocked_back = false;
+        
+        this.logo_key = logo_key;
+        this.is_main_player = (this.logo_key === "tsinghua");
+        if (this.is_main_player) {
+            this.score = 0;
+            this.is_dead = false;
+        }
+        
+        // 渲染模式（为未来图片贴图做准备）
+        this.render_mode = "shape"; 
+        this.image_obj = null;
+        
+        this.logo_img = null;
+        if (logo_img) {
+            this.logo_img = logo_img;
+        } else if (logo_key && this.playground && this.playground.logo_images && this.playground.logo_images[logo_key]) {
+            this.logo_img = this.playground.logo_images[logo_key];
+        }
+        
+        // 旋转角度
+        this.rotation = 0;
+        
+        // 特殊光环效果 (仅限清华logo)
+        this.has_special_aura = (logo_key === "tsinghua");
+        this.aura_pulse = 0;
+        
+        // 受击震动效果
+        this.shake_time = 0;
         
         // 新增：技能冷却系统
         this.skill_cooldowns = {
@@ -652,6 +874,19 @@ class Player extends AcGameObject {
         // 新增：毒圈相关属性
         this.last_zone_damage_time = 0;  // 上次受到毒圈伤害的时间
         this.zone_damage_interval = 1000;  // 毒圈伤害间隔（毫秒）
+    }
+    get_enemy_shoot_cooldown_range() {
+        let settings = this.playground && this.playground.root && this.playground.root.game_settings;
+        if (settings && settings.shoot_cooldown_range) {
+            return settings.shoot_cooldown_range;
+        }
+        return { min: 240, max: 480 };
+    }
+    random_enemy_shoot_cooldown() {
+        let range = this.get_enemy_shoot_cooldown_range();
+        let min = Math.max(1, range.min);
+        let max = Math.max(min, range.max);
+        return Math.floor(Math.random() * (max - min + 1) + min);
     }
     start() {
         if(this.is_me) {
@@ -680,19 +915,27 @@ class Player extends AcGameObject {
                 
                 outer.move_to(tx, ty);
             } else if(e.which === 1) {  // 左键
+                let canvas = outer.playground.game_map.$canvas[0];
+                let rect = canvas.getBoundingClientRect();
+                let scaleX = canvas.width / rect.width;
+                let scaleY = canvas.height / rect.height;
+                
+                let tx = (e.clientX - rect.left) * scaleX;
+                let ty = (e.clientY - rect.top) * scaleY;
+
                 if(outer.our_skill == "fireball" && outer.skill_cooldowns.fireball <= 0) {
-                    outer.shoot_fireball(e.clientX, e.clientY);
+                    outer.shoot_fireball(tx, ty);
                     outer.skill_cooldowns.fireball = outer.skill_cooldown_values.fireball;
                 } else if(outer.our_skill == "commonattack") {
-                    outer.shoot_commonattack(e.clientX, e.clientY);
+                    outer.shoot_commonattack(tx, ty);
                 } else if(outer.our_skill == "iceball" && outer.skill_cooldowns.iceball <= 0) {
-                    outer.shoot_iceball(e.clientX, e.clientY);
+                    outer.shoot_iceball(tx, ty);
                     outer.skill_cooldowns.iceball = outer.skill_cooldown_values.iceball;
                 } else if(outer.our_skill == "bomb" && outer.skill_cooldowns.bomb <= 0) {
-                    outer.shoot_bomb(e.clientX, e.clientY);
+                    outer.shoot_bomb(tx, ty);
                     outer.skill_cooldowns.bomb = outer.skill_cooldown_values.bomb;
                 } else if(outer.our_skill == "arrow" && outer.skill_cooldowns.arrow <= 0) {
-                    outer.shoot_arrow(e.clientX, e.clientY);
+                    outer.shoot_arrow(tx, ty);
                     outer.skill_cooldowns.arrow = outer.skill_cooldown_values.arrow;
                 } else if(outer.our_skill == "accelerate" && outer.skill_cooldowns.accelerate <= 0) {
                     outer.accelerate(true);
@@ -845,13 +1088,28 @@ class Player extends AcGameObject {
         this.vx = Math.cos(angle);
         this.vy = Math.sin(angle);
     }
-    is_attacked(angle, damage, our_skill) {
+    is_attacked(angle, damage, our_skill, attacker=null) {
+        // 触发受击震动效果
+        this.shake_time = 0.2;
+        
         // 被击中时生成小碎片
         this.generate_particles(12);
         
-        this.radius -= damage;
+        // 减少生命值而不是半径
+        this.health -= damage;
         
-        if(this.radius < 10) {
+        if (this.health <= 0) {
+            this.health = 0;
+            
+            // 击杀计分逻辑
+            if (attacker && attacker.is_main_player && !attacker.is_dead) {
+                let points = getKillScore(this.logo_key);
+                if (points > 0) {
+                    attacker.score += points;
+                    floatingTexts.push(new FloatingText(this.x, this.y, points));
+                }
+            }
+            
             this.generate_particles(20);
             this.destroy();
             return false;
@@ -893,6 +1151,10 @@ class Player extends AcGameObject {
     }
     
     destroy() {
+        if (this.is_main_player) {
+            this.is_dead = true;
+        }
+        
         // 从 playground 的 players 数组中移除自己
         if (this.playground && this.playground.players) {
             let index = this.playground.players.indexOf(this);
@@ -905,7 +1167,28 @@ class Player extends AcGameObject {
     }
     
     on_destroy() {
-        this.generate_particles(25);
+        let num_particles = Math.floor(Math.random() * 21) + 30; // 30 ~ 50
+        for (let i = 0; i < num_particles; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let speed = Math.random() * 150 + 50; // 50 to 200
+            let vx = Math.cos(angle) * speed;
+            let vy = Math.sin(angle) * speed;
+            let lifetime = Math.random() * 0.5 + 0.5; // 0.5 to 1
+            let radius = Math.random() * 3 + 2; // 2 to 5
+            let move_length = Math.random() * (this.radius - radius); // 限制在原有小球的半径范围内跑动
+            
+            new Particle(
+                this.playground,
+                this.x,
+                this.y,
+                radius,
+                this.color,
+                vx,
+                vy,
+                lifetime,
+                move_length
+            );
+        }
         
         setTimeout(() => {
             if (this.playground) {
@@ -930,6 +1213,20 @@ class Player extends AcGameObject {
         if (!this.timedelta || this.timedelta > 100) {
             this.timedelta = 16;
         }
+        
+        // 更新旋转角度
+        this.rotation += 0.8 * this.timedelta / 1000;
+        
+        // 更新光环脉冲
+        if (this.has_special_aura) {
+            this.aura_pulse += 2 * this.timedelta / 1000;
+        }
+        
+        // 更新震动衰减
+        if (this.shake_time > 0) {
+            this.shake_time -= this.timedelta / 1000;
+        }
+        
         // 新增：毒圈伤害检查
         if (this.playground && this.playground.game_start_time) {
             this.check_zone_damage();
@@ -974,7 +1271,7 @@ class Player extends AcGameObject {
                         this.enemy_shoot_fireball();
                     }
                     // 重置冷却时间（随机，让发射更自然）
-                    this.shoot_cooldown = Math.floor(Math.random() * 180 + 360);  // 60-150帧
+                    this.shoot_cooldown = this.random_enemy_shoot_cooldown();
                 }
             }
             
@@ -1026,7 +1323,7 @@ class Player extends AcGameObject {
                 let zone_damage = this.playground.zone_damage * damage_multiplier;
                 
                 // 受到伤害
-                this.radius -= zone_damage;
+                this.health -= zone_damage;
                 
                 // 生成被毒圈伤害的粒子效果
                 this.generate_zone_damage_particles();
@@ -1034,10 +1331,11 @@ class Player extends AcGameObject {
                 // 更新上次伤害时间
                 this.last_zone_damage_time = current_time;
                 
-                console.log(`玩家在毒圈中受到伤害，当前半径: ${this.radius}`);
+                console.log(`玩家在毒圈中受到伤害，当前血量: ${this.health}`);
                 
-                // 如果半径太小，销毁
-                if (this.radius < 5) {
+                // 如果血量太小，销毁
+                if (this.health <= 0) {
+                    this.health = 0;
                     this.generate_particles(20);
                     this.destroy();
                     return false;
@@ -1071,15 +1369,72 @@ class Player extends AcGameObject {
     render() {
         let ctx = this.playground.game_map.ctx;
         
+        let draw_x = this.x;
+        let draw_y = this.y;
+        
+        // 如果处于震动状态，添加随机偏移
+        if (this.shake_time > 0) {
+            let dx = (Math.random() - 0.5) * 6;
+            let dy = (Math.random() - 0.5) * 6;
+            draw_x += dx;
+            draw_y += dy;
+        }
+
+        // 绘制特殊呼吸光环底层 (仅限清华玩家)
+        if (this.has_special_aura) {
+            ctx.save();
+            let gradient = ctx.createRadialGradient(
+                draw_x, draw_y, this.radius * 0.8,
+                draw_x, draw_y, this.radius * (1.8 + 0.2 * Math.sin(this.aura_pulse))
+            );
+            gradient.addColorStop(0, "rgba(255, 215, 0, 0.6)");
+            gradient.addColorStop(1, "rgba(255, 215, 0, 0)");
+            
+            ctx.beginPath();
+            ctx.arc(
+                draw_x, draw_y, 
+                this.radius * (1.8 + 0.2 * Math.sin(this.aura_pulse)), 
+                0, Math.PI * 2
+            );
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.restore();
+        }
+        
+        ctx.save();
         // 绘制玩家
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
-        ctx.fill();
+        if (this.logo_img) {
+            ctx.translate(draw_x, draw_y);
+            ctx.rotate(this.rotation);
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2, false);
+            ctx.clip();
+            this.render_image(ctx, this.logo_img, 0, 0, this.radius * 2, this.radius * 2);
+        } else if (this.render_mode === "image" && this.image_obj) {
+            ctx.translate(draw_x, draw_y);
+            ctx.rotate(this.rotation);
+            this.render_image(ctx, this.image_obj, 0, 0, this.radius * 2, this.radius * 2);
+        } else {
+            this.render_circle(ctx, draw_x, draw_y, this.radius, this.color);
+        }
+        ctx.restore();
+        
+        // 绘制血条
+        let ratio = Math.max(0, this.health / this.max_health);
+        let bar_width = this.radius * 2;
+        let bar_height = 6;
+        let bar_x = draw_x - this.radius;
+        let bar_y = draw_y - this.radius - 12;
+        
+        ctx.fillStyle = "red";
+        ctx.fillRect(bar_x, bar_y, bar_width, bar_height);
+        
+        ctx.fillStyle = "lime";
+        ctx.fillRect(bar_x, bar_y, bar_width * ratio, bar_height);
         
         if (this.is_me) {
             ctx.beginPath();
-            ctx.arc(this.x, this.y, this.radius + 1, 0, Math.PI * 2);
+            ctx.arc(draw_x, draw_y, this.radius + 1, 0, Math.PI * 2);
             ctx.strokeStyle = "gold";
             ctx.lineWidth = 3;
             ctx.stroke();
@@ -1171,6 +1526,7 @@ class Player extends AcGameObject {
 class FireBall extends AcGameObject {
     constructor(playground,player,x,y,radius,vx,vy,color,speed,move_length,damage) {
         super();
+        this.z_index = 3; // 在玩家下面
         this.playground = playground;
         this.player = player;
         this.x = x;
@@ -1184,6 +1540,10 @@ class FireBall extends AcGameObject {
         this.eps = 0.1;
         this.ctx = this.playground.game_map.ctx;
         this.damage = damage;
+        
+        // 渲染模式（为未来图片贴图做准备）
+        this.render_mode = "shape"; 
+        this.image_obj = null;
     }
     start() {
 
@@ -1222,20 +1582,22 @@ class FireBall extends AcGameObject {
 
     attack(player) {
         let angle = Math.atan2(player.y - this.y,player.x - this.x);
-        player.is_attacked(angle,this.damage, this.color === "lightblue" ? "iceball" : (this.color === "white" ? "commonattack" : "fireball"));
+        player.is_attacked(angle,this.damage, this.color === "lightblue" ? "iceball" : (this.color === "white" ? "commonattack" : "fireball"), this.player);
         this.destroy();
     }
     
     render() {
-        this.ctx.beginPath();
-        this.ctx.arc(this.x,this.y,this.radius,0,Math.PI * 2,false);
-        this.ctx.fillStyle = this.color;
-        this.ctx.fill();
+        if (this.render_mode === "image" && this.image_obj) {
+            this.render_image(this.ctx, this.image_obj, this.x, this.y, this.radius * 2, this.radius * 2);
+        } else {
+            this.render_circle(this.ctx, this.x, this.y, this.radius, this.color);
+        }
     }
 }
 class Bomb extends AcGameObject {
     constructor(playground, player, x, y, color, damage) {
         super();
+        this.z_index = 3; 
         this.playground = playground;
         this.player = player;
         this.x = x;
@@ -1253,6 +1615,10 @@ class Bomb extends AcGameObject {
         this.explosion_radius = playground.height * 0.08;
         this.lifetime = 10;
         this.age = 0;
+        
+        // 渲染模式（为未来图片贴图做准备）
+        this.render_mode = "shape"; 
+        this.image_obj = null;
         
         //console.log('炸弹创建，将在原地爆炸');
     }
@@ -1318,17 +1684,17 @@ class Bomb extends AcGameObject {
         let alpha = 1 - (this.age / this.lifetime);
         let radius = this.explosion_radius * alpha;
         
-        // 外圈
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 200, 100, ${alpha * 0.3})`;
-        ctx.fill();
-        
-        // 内圈
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, radius * 0.5, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-        ctx.fill();
+        if (this.render_mode === "image" && this.image_obj) {
+            ctx.globalAlpha = alpha;
+            this.render_image(ctx, this.image_obj, this.x, this.y, radius * 2, radius * 2);
+            ctx.globalAlpha = 1;
+        } else {
+            // 外圈
+            this.render_circle(ctx, this.x, this.y, radius, `rgba(255, 200, 100, ${alpha * 0.3})`);
+            
+            // 内圈
+            this.render_circle(ctx, this.x, this.y, radius * 0.5, `rgba(255, 255, 255, ${alpha})`);
+        }
     }
 }
 class Arrow extends AcGameObject {
@@ -1355,7 +1721,9 @@ class Arrow extends AcGameObject {
         this.ball_speed = playground.height * 0.03;  // 小球速度
         this.ball_move_length = playground.height * 1.2;  // 移动距离
         
-        
+        // 渲染模式（为未来图片贴图做准备）
+        this.render_mode = "shape"; 
+        this.image_obj = null;
     }
     
     start() {
@@ -1427,16 +1795,18 @@ class Arrow extends AcGameObject {
         
         // 只在发射期间绘制
         if (this.current_arrow < this.arrow_count) {
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.playground.height * 0.02, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(255, 255, 255, ${0.3})`;
-            ctx.fill();
+            if (this.render_mode === "image" && this.image_obj) {
+                this.render_image(ctx, this.image_obj, this.x, this.y, this.playground.height * 0.04, this.playground.height * 0.04);
+            } else {
+                this.render_circle(ctx, this.x, this.y, this.playground.height * 0.02, `rgba(255, 255, 255, ${0.3})`);
+            }
         }
     }
 }
 class Particle extends AcGameObject {
-    constructor(playground, x, y, radius, color, vx, vy, lifetime) {
+    constructor(playground, x, y, radius, color, vx, vy, lifetime, move_length=0) {
         super();
+        this.z_index = 2; // 在玩家和小球下面
         this.playground = playground;
         this.x = x;
         this.y = y;
@@ -1444,7 +1814,14 @@ class Particle extends AcGameObject {
         this.color = color;
         this.vx = vx;
         this.vy = vy;
-        this.lifetime = lifetime;    // 生命周期（帧数）
+        this.lifetime = lifetime;
+        this.max_lifetime = lifetime;    // 生命周期（帧数）
+        this.move_length = move_length;
+        this.moved = 0;
+        
+        // 渲染模式（为未来图片贴图做准备）
+        this.render_mode = "shape"; 
+        this.image_obj = null;
     }
     
     start() {
@@ -1452,15 +1829,27 @@ class Particle extends AcGameObject {
     
     update() {
         // 减少生命周期
-        this.lifetime -= 1;
+        this.lifetime -= this.timedelta / 1000;  // 根据帧率调整减少速度  
         if (this.lifetime <= 0) {
             this.destroy();
-            return false;
+            return ;
         }
         
-        // 匀速直线运动
-        this.x += this.vx;
-        this.y += this.vy;
+        this.vx*=0.94;// 匀速直线运动
+        this.vy*=0.94;
+        
+        let dx = this.vx * this.timedelta / 1000;
+        let dy = this.vy * this.timedelta / 1000;
+        
+        this.moved += Math.sqrt(dx * dx + dy * dy);
+        
+        if (this.move_length > 0 && this.moved >= this.move_length) {
+            this.vx = 0;
+            this.vy = 0;
+        } else {
+            this.x += dx;
+            this.y += dy;
+        }
         
         this.render();
     }
@@ -1470,8 +1859,26 @@ class Particle extends AcGameObject {
         
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
+        
+        // Compute alpha for fade out effect
+        let alpha = this.lifetime / this.max_lifetime;
+        
+        // Parse the rgb/rgba or name color to apply alpha
+        if (this.color.startsWith('rgb')) {
+            let colors = this.color.match(/\d+/g);
+            if (colors && colors.length >= 3) {
+                ctx.fillStyle = `rgba(${colors[0]}, ${colors[1]}, ${colors[2]}, ${alpha})`;
+            } else {
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = alpha;
+            }
+        } else {
+            ctx.fillStyle = this.color;
+            ctx.globalAlpha = alpha;
+        }
+        
         ctx.fill();
+        ctx.globalAlpha = 1; // Reset global alpha
     }
 }
 class AcGame {
@@ -1489,15 +1896,18 @@ class AcGame {
         });
         
         // 默认设置
-        this.settings = {
+        this.game_settings = {
             difficulty: 'medium',
             shoot_cooldown_range: { min: 240, max: 480 }
         };
         
+        // 游戏状态管理 ("menu", "playing", "gameover")
+        this.state = "menu";
+        
         this.menu = new AcGameMenu(this);
         this.playground = new AcGamePlayground(this);
         this.intro = new AcGameIntro(this);
-        this.settings = new AcGameSettings(this);  // 创建设置界面
+        this.settings_panel = new AcGameSettings(this);  // 创建设置界面
         
         // 创建游戏结束界面（初始隐藏）
         this.$game_over = $(`
@@ -1559,6 +1969,7 @@ class AcGame {
     // 显示游戏结束界面
     game_over() {
         console.log("游戏结束");
+        this.state = "gameover"; // 更新状态
         
         // 隐藏游戏界面
         this.playground.hide();
@@ -1567,18 +1978,24 @@ class AcGame {
         this.$game_over.show();
     }
     
-    // 重新开始游戏
-    restart_game() {
-        this.$game_over.hide();
-        
-        // 销毁当前游戏界面
+    // 清理所有游戏对象和界面
+    clear_all_objects() {
         if (this.playground) {
             // 清理所有游戏对象
-            AC_GAME_OBJECT = [];
+            destroy_all_ac_game_objects();
             
             // 移除旧界面
             this.playground.$playground.remove();
         }
+    }
+    
+    // 重新开始游戏
+    restart_game() {
+        this.$game_over.hide();
+        this.state = "playing"; // 更新状态
+        
+        // 销毁当前游戏界面
+        this.clear_all_objects();
         
         // 创建新游戏界面
         this.playground = new AcGamePlayground(this);
@@ -1588,12 +2005,10 @@ class AcGame {
     // 返回主菜单
     back_to_menu() {
         this.$game_over.hide();
+        this.state = "menu"; // 更新状态
         
         // 清理游戏界面
-        if (this.playground) {
-            AC_GAME_OBJECT = [];
-            this.playground.$playground.remove();
-        }
+        this.clear_all_objects();
         
         // 显示菜单
         this.menu.show();
